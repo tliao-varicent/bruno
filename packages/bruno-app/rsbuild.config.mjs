@@ -53,6 +53,9 @@ export default defineConfig({
   html: {
     title: 'Bruno'
   },
+  server: {
+    port: Number(process.env.BRUNO_DEV_PORT) || 3000
+  },
   tools: {
     rspack: {
       module: {
