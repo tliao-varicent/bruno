@@ -4,6 +4,7 @@ import { IconTrash, IconAlertCircle, IconGripVertical, IconMinusVertical } from 
 import { Tooltip } from 'react-tooltip';
 import classnames from 'classnames';
 import { uuid } from 'utils/common';
+import { parsePastedKeyValuePair } from 'utils/common/bulkKeyValueUtils';
 import { useMouseRowDrag, DRAG_ROW_KEY_ATTR } from 'hooks/useMouseRowDrag';
 import { useRevealFocusedTableRow } from 'hooks/useRevealFocusedTableRow';
 import { useSortableEditableTableRows } from 'hooks/useSortableEditableTableRows';
@@ -309,13 +310,13 @@ const EditableTable = React.forwardRef(({
     }
   }, [isLastEmptyRow, rowsWithEmpty]);
 
-  const handleValueChange = useCallback((rowUid, key, value) => {
+  const handleRowChange = useCallback((rowUid, patch) => {
     const rowIndex = rowsWithEmpty.findIndex((r) => r.uid === rowUid);
     if (rowIndex === -1) return;
 
     const updatedRows = rowsWithEmpty.map((row) => {
       if (row.uid === rowUid) {
-        return { ...row, [key]: value };
+        return { ...row, ...patch };
       }
       return row;
     });
@@ -327,6 +328,11 @@ const EditableTable = React.forwardRef(({
 
     onChange(result);
   }, [rowsWithEmpty, hasAnyValue, isRowEditable, onChange, showAddRow]);
+
+  const handleValueChange = useCallback(
+    (rowUid, key, value) => handleRowChange(rowUid, { [key]: value }),
+    [handleRowChange]
+  );
 
   const handleCheckboxChange = useCallback((rowUid, checked) => {
     const row = rowsWithEmpty.find((candidate) => candidate.uid === rowUid);
@@ -362,10 +368,30 @@ const EditableTable = React.forwardRef(({
     onReorder: handleRowReorder
   });
 
+  const keyColumn = useMemo(() => columns.find((col) => col.isKeyField), [columns]);
+  const valueColumn = useMemo(() => columns.find((col) => col.key === 'value'), [columns]);
+
+  // Pasting `"name": "value"` into a key cell fills both columns instead of dropping
+  // the whole string into the key. Bound in the capture phase so it lands before
+  // CodeMirror's own paste listener in cells rendered as an editor.
+  const handleKeyCellPaste = useCallback((event, row, column) => {
+    if (column.readOnly || !(isRowEditable?.(row) ?? true)) return;
+
+    const pair = parsePastedKeyValuePair(event.clipboardData?.getData('Text'));
+    if (!pair) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    handleRowChange(row.uid, { [column.key]: pair.name, [valueColumn.key]: pair.value });
+  }, [handleRowChange, isRowEditable, valueColumn]);
+
   const renderCell = useCallback((column, row, rowIndex) => {
     const isEmpty = isLastEmptyRow(row, rowIndex);
     const value = column.getValue ? column.getValue(row) : row[column.key];
     const error = getRowError?.(row, rowIndex, column.key);
+    const pasteProps = column === keyColumn && valueColumn
+      ? { onPasteCapture: (event) => handleKeyCellPaste(event, row, column) }
+      : null;
 
     const errorIcon = error && !isEmpty ? (
       <span>
@@ -384,7 +410,7 @@ const EditableTable = React.forwardRef(({
 
     if (column.render) {
       return (
-        <div className="flex items-center">
+        <div className="flex items-center" {...pasteProps}>
           {column.render({
             row,
             value,
@@ -398,7 +424,7 @@ const EditableTable = React.forwardRef(({
     }
 
     return (
-      <div className="flex items-center">
+      <div className="flex items-center" {...pasteProps}>
         <input
           type="text"
           autoComplete="off"
@@ -414,9 +440,8 @@ const EditableTable = React.forwardRef(({
         {errorIcon}
       </div>
     );
-  }, [isLastEmptyRow, getRowError, handleValueChange]);
+  }, [isLastEmptyRow, getRowError, handleValueChange, keyColumn, valueColumn, handleKeyCellPaste]);
 
-  const keyColumn = useMemo(() => columns.find((col) => col.isKeyField), [columns]);
   const flashedRowUid = useRevealFocusedTableRow({
     focusRow,
     rows: rowsWithEmpty,

@@ -44,6 +44,28 @@ const readClipboard = async (page: Page): Promise<string> => {
 };
 
 /**
+ * Dispatch a synthetic paste at whichever element has focus, which works for both
+ * plain inputs and CodeMirror's hidden textarea. Playwright has no OS clipboard, and
+ * the real one is shared by every parallel worker.
+ *
+ * The event is untrusted, so the browser skips its own insertion: use this to assert
+ * what a paste handler does, not that ordinary text lands in the field.
+ * @param page - The page object
+ * @param text - The text to paste
+ * @returns void
+ */
+const pasteIntoFocusedElement = async (page: Page, text: string) => {
+  await page.evaluate((pasted) => {
+    const target = document.activeElement;
+    if (!target) throw new Error('Nothing is focused, so there is no paste target');
+
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', pasted);
+    target.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+  }, text);
+};
+
+/**
  * Dismiss all import issues toasts (they use infinite duration and persist across tests).
  * @param page - The page object
  * @returns void
@@ -3732,6 +3754,7 @@ const clickOutsideModal = async (page: Page) => {
 export {
   waitForReadyPage,
   readClipboard,
+  pasteIntoFocusedElement,
   setRequestUrlAndSave,
   openUrlVarTooltip,
   dismissVarTooltip,
