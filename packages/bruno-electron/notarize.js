@@ -8,9 +8,9 @@ const notarize = async function (params) {
     return;
   }
 
-  let appId = 'com.usebruno.app';
+  const appId = 'com.usebruno.app.tliao';
 
-  let appPath = path.join(params.appOutDir, `${params.packager.appInfo.productFilename}.app`);
+  const appPath = path.join(params.appOutDir, `${params.packager.appInfo.productFilename}.app`);
   if (!fs.existsSync(appPath)) {
     console.error(`Cannot find application at: ${appPath}`);
     return;
